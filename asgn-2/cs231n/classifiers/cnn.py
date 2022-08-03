@@ -63,7 +63,19 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        C, H, W = input_dim
+        F = num_filters
+        HH, WW = filter_size, filter_size
+        
+        self.params['W1'] = np.random.randn(F,C,HH,WW) * weight_scale
+        self.params['b1'] = np.zeros(F)
+
+        # max pool divides the image dimensions by 2
+        self.params['W2'] = np.random.randn(F * H//2 * W//2, hidden_dim) * weight_scale
+        self.params['b2'] = np.zeros(hidden_dim)
+        
+        self.params['W3'] = np.random.randn(hidden_dim, num_classes) * weight_scale
+        self.params['b3'] = np.zeros(num_classes)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -102,7 +114,9 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        conv_out, conv_cache = conv_relu_pool_forward(X, W1, b1, conv_param, pool_param)
+        hid_out, hid_cache = affine_relu_forward(conv_out, W2, b2)
+        scores, scores_cache = affine_forward(hid_out, W3, b3)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -125,8 +139,18 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        loss, d_loss = softmax_loss(scores, y)
+        d_scores, grads['W3'], grads['b3'] = affine_backward(d_loss, scores_cache)
+        d_hid, grads['W2'], grads['b2'] = affine_relu_backward(d_scores, hid_cache)
+        _, grads['W1'], grads['b1'] = conv_relu_pool_backward(d_hid, conv_cache)
 
+        
+        reg = self.reg
+        loss += 0.5 * reg * (np.sum(W1**2) + np.sum(W2**2) + np.sum(W3**2))
+        grads['W1'] += reg * W1
+        grads['W2'] += reg * W2
+        grads['W3'] += reg * W3
+        
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #

@@ -600,7 +600,23 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    stride, pad = conv_param.get('stride', 1), conv_param.get('pad', 0)
+    
+    padax = ((0,0), (0,0), (pad,pad), (pad,pad))
+    x = np.pad(x, padax) # note: x is now padded
+    
+    N, _, H, W = x.shape
+    F, _, HH, WW = w.shape
+    
+    out = np.zeros((N, F, 1+(H-HH)//stride, 1+(W-WW)//stride)) # (N,F,H_,W_)
+    for batch in range(N):
+        for iy in range(0, H-HH+1, stride):
+            for ix in range(0, W-WW+1, stride):
+                # get portion of input corresponding to (iy, ix) position of sliding window
+                x_slice = x[batch, :, iy:iy+HH, ix:ix+WW] # (C,HH,WW)
+
+                out[batch, :, iy//stride, ix//stride] = np.sum(x_slice * w, axis=(1,2,3)) # np.sum((F,C,HH,WW), axis=(1,2,3)) -> (F,)
+    out += b.reshape(-1,1,1) # (N,F,H_,W_) += (F,1,1)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -628,7 +644,28 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, w, _, conv_param = cache 
+    stride, pad = conv_param.get('stride', 1), conv_param.get('pad', 0)
+
+    # dout: (N,F,H_,W_), w: (F,C,HH,WW), x:(N,C,H,W) (note: x is padded)
+    N, _, H, W = x.shape # note: x is padded
+    F, _, HH, WW = w.shape
+
+    dw, dx = np.zeros_like(w), np.zeros_like(x) # (F, C, HH, WW), (N, C, H, W)
+    for batch in range(N):
+        for iy in range(0, H-HH+1, stride):
+            for ix in range(0, W-WW+1, stride):
+                # get portion of dout corresponding to (iy, ix) position of sliding window, along all filters 
+                dout_slice = dout[batch, :, iy//stride, ix//stride].reshape(F,1,1,1) # (F,1,1,1)
+                # get portion of input corresponding to (iy, ix) position of sliding window
+                x_slice = x[batch, :, iy:iy+HH, ix:ix+WW] # (C,HH,WW)
+
+                dw += dout_slice * x_slice # (F,C,HH,WW)
+                dx[batch, :, iy:iy+HH, ix:ix+WW] += np.sum(dout_slice * w, axis=0) # np.sum((F,C,HH,WW), axis=0) -> (C,HH,WW)
+
+    dx = dx[:, :, pad:-pad, pad:-pad] # clip off the padded indexes
+
+    db = np.sum(dout, axis=(0,2,3)) # (F,)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -663,8 +700,19 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    PH, PW = pool_param.get('pool_height', 1), pool_param.get('pool_width', 1) 
+    stride = pool_param.get('stride', 1)
+    
+    N, C, H, W = x.shape
+    
+    out = np.zeros((N, C, 1+(H-PH)//stride, 1+(W-PW)//stride)) # (N,C,H_,W_)
+    for iy in range(0, H-PH+1, stride):
+        for ix in range(0, W-PW+1, stride):
+            # get portion of input corresponding to (iy, ix) position of sliding window, along all batches
+            x_slice = x[:, :, iy:iy+PH, ix:ix+PW] # (N,C,HH,WW)
 
+            out[:, :, iy//stride, ix//stride] = np.max(x_slice, axis=(2,3)) # np.max((N,C,HH,WW), axis=(2,3)) -> (N,C)
+                
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -689,7 +737,25 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, pool_param = cache
+
+    PH, PW = pool_param.get('pool_height', 1), pool_param.get('pool_width', 1) 
+    stride = pool_param.get('stride', 1)
+    
+    N, C, H, W = x.shape
+
+    dx = np.zeros_like(x)
+    for iy in range(0, H-PH+1, stride):
+        for ix in range(0, W-PW+1, stride):
+            # get portion of input corresponding to (iy, ix) position of sliding window, along all batches
+            x_slice = x[:, :, iy:iy+PH, ix:ix+PW] # (N,C,HH,WW)
+            # get portion of dout corresponding to (iy, ix) position of sliding window, along all channels 
+            dout_slice = dout[:, :, iy//stride, ix//stride].reshape(-1) # (N*C,). reshaped because dx[max_idxs] is of shape (N*C,)
+
+            x_max = np.max(x_slice, axis=(2,3)).reshape(N,C,1,1) # (N,C,1,1)
+            max_idxs = x == x_max # (N,C,H,W)
+            dx[max_idxs] += dout_slice
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
