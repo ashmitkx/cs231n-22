@@ -421,6 +421,9 @@ def layernorm_forward(x, gamma, beta, ln_param):
     feature_std = np.sqrt(feature_var + eps)
 
     x_norm = (x - feature_mean) / feature_std
+    
+    print(x_norm.shape)
+    
     out = gamma * x_norm + beta
 
     cache = (feature_std, x_norm, gamma)
@@ -796,7 +799,13 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+
+    x = x.transpose(0, 2, 3, 1) # (N, H, W, C) change indexing to channel last
+    x = x.reshape(-1, C) # (N*H*W, C) merge pixels of each feature map along batch dimension
+    
+    out, cache = batchnorm_forward(x, gamma, beta, bn_param)
+    out = out.reshape(N, H, W, C).transpose(0, 3, 1, 2)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -829,7 +838,13 @@ def spatial_batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = dout.shape
+
+    dout = dout.transpose(0, 2, 3, 1) # (N, H, W, C) change indexing to channel last
+    dout = dout.reshape(-1, C) # (N*H*W, C) merge pixels of each feature map along batch dimension
+    
+    dx, dgamma, dbeta = batchnorm_backward_alt(dout, cache)
+    dx = dx.reshape(N, H, W, C).transpose(0, 3, 1, 2)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -870,7 +885,20 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    
+    x = x.reshape(N*G, C//G*H*W) # split channels into groups. now we have N*G batches
+
+    # proceed in the same exact way as layernorm
+    mu, var = np.mean(x, axis=1).reshape(-1, 1), np.var(x, axis=1).reshape(-1, 1) # N*G, 1
+    stdev = np.sqrt(var + eps)
+    x_norm = (x - mu) / stdev # (N*G, C//G*H*W)
+
+    x_norm = x_norm.reshape(N, C, H, W) # restore tensor shape
+
+    # apply gamma and beta on each channel (not group). note: their shape is (1,C,1,1)
+    out = x_norm*gamma + beta # (N,C,H,W)
+    cache = (G, stdev, x_norm, gamma)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -899,7 +927,25 @@ def spatial_groupnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # prepare vars
+    G, std, x_norm, gamma = cache
+    N, C, H, W = dout.shape
+
+    # backpropagate!
+    dbeta = np.sum(dout, axis=(0,2,3)).reshape(1, C, 1, 1)  # (1,C,1,1)
+    dgamma = np.sum(dout * x_norm, axis=(0,2,3)).reshape(1, C, 1, 1)  # (1,C,1,1)
+
+    # the forward pass uses shape (N*G, C//G*H*W) while normalizing
+    # hence, backpass must do the same
+    d_xnorm = (dout * gamma).reshape(N*G, C//G*H*W)
+    x_norm = x_norm.reshape(N*G, C//G*H*W)
+
+    t1 = np.mean(d_xnorm, axis=1).reshape(-1, 1)   # (N*G,1)
+    t2 = np.mean(d_xnorm * x_norm, axis=1).reshape(-1, 1)  # (N*G,1)
+    dout_dx = d_xnorm - t1 - x_norm * t2 # (N*G, C//G*H*W)
+    dx = dout_dx / std  # (N*G, C//G*H*W) / (N*G,1)
+
+    dx = dx.reshape(N,C,H,W)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################

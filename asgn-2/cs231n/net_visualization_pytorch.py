@@ -34,8 +34,15 @@ def compute_saliency_maps(X, y, model):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
-
+    y_pred = model(X)
+    class_scores = y_pred.gather(1, y.view(-1, 1)).squeeze()
+    gain = class_scores.sum()
+    gain.backward()
+    
+    with torch.no_grad():
+        saliency, _ = X.grad.abs().max(1)
+        X.grad.zero_()
+        
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                             END OF YOUR CODE                               #
@@ -76,7 +83,19 @@ def make_fooling_image(X, target_y, model):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    while(True):
+        y_pred = model(X_fooling) # (1,1000)
+        pred_class = y_pred.argmax(1) 
+        
+        if (pred_class.item() == target_y): break
+
+        target_score = y_pred[0, target_y]
+        target_score.backward()
+
+        with torch.no_grad():
+            grad = X_fooling.grad
+            X_fooling += learning_rate * grad / grad.norm()
+            X_fooling.grad.zero_()
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -94,7 +113,15 @@ def class_visualization_update_step(img, model, target_y, l2_reg, learning_rate)
     ########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    y_pred = model(img)
+    target_score = y_pred[0, target_y]
+    gain = target_score - l2_reg * img.norm()**2
+
+    gain.backward()
+    with torch.no_grad():
+        grad = img.grad
+        img += learning_rate * grad / grad.norm()
+        img.grad.zero_()
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ########################################################################
