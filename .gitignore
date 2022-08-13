@@ -2,4 +2,5 @@ __pycache__/
 cifar-10-batches-py/
 imagenet_val_25.npz
 coco_captioning/
+MNIST_data/
 desktop.ini
